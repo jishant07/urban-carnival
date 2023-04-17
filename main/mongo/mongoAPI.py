@@ -1,6 +1,7 @@
 from flask import *
 from ..database_init import MONGO
 from ..functions import getRandomData
+from pymongo import UpdateOne
 import time
 import random
 import string
@@ -84,7 +85,7 @@ def aggregate():
 @mongoAPI.route("/wildcard_search/<value>")
 def wildcard(value):
     time_start = time.time()
-    wildcard_data = db.data.find({'Item Type': {'$regex': '.*{}.*'.format(value)}},{"_id" : 0})
+    wildcard_data = db.data.find({'Item Type': {'$regex': '.*{}.*'.format(value)}},{"_id" : 0}).limit(10000)
     time_end = time.time()
 
     data = cursor_to_data(wildcard_data)
@@ -99,21 +100,30 @@ def wildcard(value):
         }
     })
 
-@mongoAPI.route("/update")
-def data_update():
+@mongoAPI.route("/update/<count>")
+def data_update(count):
     random_name = ""
     for i in range(10):
         random_name = random_name + string.ascii_lowercase[random.randint(0, len(string.ascii_lowercase)-10)]
-    print(random_name)
-    time_start = time.time()
-    update_data = db.data.update_many({},{'$set' : {"Order Priority" : random_name}}, True)
-    time_end = time.time()
+    
+    try:
+        bulk_request = []
+        time_start = time.time()
+        for doc in db.data.find({}).limit(int(count)):
+            bulk_request.append(UpdateOne({'_id' : doc["_id"]}, {'$set' : {"Order Priority" : random_name}},True))
+        result = db.data.bulk_write(bulk_request)
+        time_end = time.time()
 
-    return jsonify({
-        "status" : "success",
-        "message" : "Update done successfully",
-        "result" : {
-            "time_taken" : round(time_end -  time_start),
-            "documents_changed" : update_data.modified_count
-        }
-    })
+        return jsonify({
+            "status" : "success",
+            "message" : "Update done successfully",
+            "result" : {
+                "time_taken" : round(time_end -  time_start),
+                "documents_changed" : result.modified_count
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status" : "failure",
+            "message" : str(e)
+        })
